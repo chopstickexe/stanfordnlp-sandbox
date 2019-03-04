@@ -69,7 +69,6 @@ print(f'Process done. {sent_count} sentences, {time.time() - start} sec.')
 #%%
 from dataclasses import dataclass
 
-
 @dataclass
 class Morph:
     '''形態素を表すクラス'''
@@ -80,22 +79,21 @@ class Morph:
 
 
 with open('data/neko.txt.snd', 'r', encoding='utf-8') as f:
-    count = 1
+    count = 0
     sent = []
     for line in f:
         line = line.strip()
         if line == '---':
+            count += 1
             if count == 3:
                 print(sent)
                 break
             else:
-                count = count + 1
                 sent.clear()
                 continue
         elms = line.strip().split('\t')
         sent.append(
             Morph(surface=elms[0], base=elms[1], pos=elms[2], pos1=None))
-    print(sent)
 
 #%% [markdown]
 # ## 41. 係り受け解析結果の読み込み（文節・係り受け）
@@ -106,4 +104,66 @@ with open('data/neko.txt.snd', 'r', encoding='utf-8') as f:
 # さらに，入力テキストのCaboChaの解析結果を読み込み，
 # １文をChunkオブジェクトのリストとして表現し，8文目の文節の文字列と係り先を表示せよ．
 # 第5章の残りの問題では，ここで作ったプログラムを活用せよ．
+
+#%%
+from dataclasses import field
+from typing import List
+
+@dataclass
+class Chunk:
+    '''文節を表すクラス'''
+    morphs: List[Morph] = field(default_factory=list)
+    dst: int = field(default_factory=int)
+    srcs: List[int] = field(default_factory=list)
+
+with open('data/neko.txt.snd', 'r', encoding='utf-8') as f:
+    count = 0  # 処理済みの文数
+    m_index = -1  # 形態素インデックス（文の先頭は0）
+    sent = []  # 文（Chunkのリスト）
+    chunk = None  # 現在の文節
+    chunks = []  # 各形態素が属する文節のインデックスを記憶する配列
+    dep_tos = []  # 各形態素が依存している形態素のインデックスを記憶する配列
+    for line in f:
+        m_index += 1
+        line = line.strip()
+        if line == '---':
+            count += 1
+            sent.append(chunk)
+            # 全文節の係り先文節（dst）を埋める
+            for i in range(0, m_index):
+                c_index = chunks[i]
+                dep_to_m = dep_tos[i]
+                dep_to_c = chunks[dep_to_m]
+                if c_index != dep_to_c:
+                    sent[c_index].dst = dep_to_c
+            # 全文節の係り元文節（srcs）を埋める
+            for i in range(0, len(sent)):
+                for j in range(0, i):
+                    if sent[j].dst == i:
+                        sent[i].srcs.append(j)
+            if count == 8:
+                print(sent)
+                break
+            else:
+                m_index = -1  # 形態素インデックス（文の先頭は0）
+                sent = []  # 文（Chunkのリスト）
+                chunk = None  # 現在の文節
+                chunks = []  # 各形態素が属する文節のインデックスを記憶する配列
+                dep_tos = []  # 各形態素が依存している形態素のインデックスを記憶する配列
+                continue
+        elms = line.strip().split('\t')
+        # stanfordnlpは形態素のIDを1オリジンで付与するが、紛らわしいので0オリジンにする（rootは-1）
+        dep_to = int(elms[5]) - 1
+        rel = elms[6]
+        if rel in ['aux', 'cop', 'mark', 'det', 'clf', 'case'] and dep_to < m_index:
+            # 現在の文節の一部
+            pass
+        else:
+            # 新しい文節
+            if chunk:
+                sent.append(chunk)
+            chunk = Chunk()
+        chunk.morphs.append(Morph(surface=elms[0], base=elms[1], pos=elms[2], pos1=None))
+        chunks.append(len(sent))
+        dep_tos.append(dep_to)
 
